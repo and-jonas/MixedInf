@@ -88,25 +88,21 @@ class ImageSelector:
             img_basename = os.path.basename(path)
             overlay_ = cv2.imread(f'{self.dir_overlays}/{img_basename.replace(".jpg", ".tiff")}')
             resize = self.resize_with_aspect_ratio(overlay_, height=1300)  # Resize by width
-            # img_ = cv2.imread(f'{self.dir_images}/c3_sn1_9_leaf.png')
-            # overlay_ = cv2.imread(f'{self.dir_overlays}/c3_sn1_9_leaf.png')
-            try:
-                # stack = np.vstack((overlay_, img_))
-                # resize = self.resize_with_aspect_ratio(stack, width=1800)  # Resize by width
-                # display image until user hits ESC key
-                cv2.imshow('ImageWindow', resize)
-                key = cv2.waitKey(0)
-                if key == 54:  # Numpad 6
-                    action = "None"
-                    cv2.destroyAllWindows()
-                if key == 52:  # Numpad 4
-                    action = "Exclude"
-                    cv2.destroyAllWindows()
-                if key == 27:
-                    cv2.destroyAllWindows()
-                    break
-            except:
-                continue
+
+            cv2.imshow('ImageWindow', resize)
+            key = cv2.waitKey(0)
+            if key == ord('k'):  # keep
+                action = "None"
+                cv2.destroyAllWindows()
+            elif key == ord('r'):  # remove
+                action = "Exclude"
+                cv2.destroyAllWindows()
+            elif key == ord('q'):  # quit
+                cv2.destroyAllWindows()
+                break
+            else:
+                print('not an interpretable input')
+
             log.append({'path': path, 'action': action})
 
         logfile_ = pd.DataFrame(log)
