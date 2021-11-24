@@ -578,8 +578,8 @@ from skimage.segmentation import watershed
 from skimage import morphology
 
 # get image names
-workdir = "P:/Public/Jonas/004_Divers/Test2/Evaluation"
-image_paths = glob.glob(f'{workdir}/orig/*.jpg')
+workdir = "P:/Public/Jonas/004_Divers/PycnidiaPattern_all"
+image_paths = glob.glob(f'{workdir}/*.tif')
 image_names = []
 for p in image_paths:
     image_name = os.path.splitext(os.path.basename(p))[0]
@@ -587,13 +587,45 @@ for p in image_paths:
 
 indices = [i for i, s in enumerate(image_names) if 'MIX_P1_L4_im5' in s]
 
-for image_name in image_names:
+logfile = pd.read_csv(f'{workdir}/processed/overlay2/logfile.csv')
 
-    print(image_name)
+files_analyze = []
+for index, row in logfile.iterrows():
+    if row["action"] == "None":
+        base_name = os.path.basename(row["path"])
+        file_name = base_name.replace(".tiff", "")
+        files_analyze.append(file_name)
+    else:
+        continue
+
+iterator = 0
+for image_name in files_analyze:
+
+    iterator += 1
+    print(f'Processing {iterator}/{len(files_analyze)}')
     check = imageio.imread(f'{workdir}/processed/combined_mask/{image_name}.tiff')
     leaf_mask = imageio.imread(f'{workdir}/leaf_mask/{image_name}.tiff')
-    orig_image = imageio.imread(f'{workdir}/orig/{image_name}.jpg')
-    plt.imshow(check)
+    leaf_mask = np.where(leaf_mask != 0, 1, leaf_mask)
+    orig_image = imageio.imread(f'{workdir}/JPG_Files/{image_name}.jpg')
+    raw_image = imageio.imread(f'{workdir}/{image_name}.tif')
+
+    # plt.imshow(check)
+    # plt.imshow(leaf_mask)
+    # plt.imshow(orig_image)
+
+    # distance
+    mask_bin = np.where(check != 0, 1, check)
+    mask_bin_inv = np.where(mask_bin == 0, 1, 0)
+    distance = ndi.distance_transform_edt(mask_bin_inv)
+    check = np.where(distance > 100, 4, check)
+
+    # fig, axs = plt.subplots(1, 2, sharex=True, sharey=True)
+    # # Show RGB and segmentation mask
+    # axs[0].imshow(orig_image)
+    # axs[0].set_title('original patch')
+    # axs[1].imshow(distance)
+    # axs[1].set_title('original patch')
+    # plt.show(block=True)
 
     # binarize the post-processed mask
     mask = np.where(check != 0, 255, check)
@@ -610,15 +642,52 @@ for image_name in image_names:
     labels_erode = morphology.erosion(labels, kernel)
     labels_out = leaf_mask * labels_erode
 
-    plt.imshow(labels_out)
+    # plt.imshow(labels_out)
+
+    area_leaf = len(np.where(leaf_mask != 0)[0])
+
+    # count clusters (not including the "empty" ones)
+    # clusters = np.where(labels_out == 4, 0, labels_out)   # remove empty
+    clusters = labels_out
+    cl_bin = np.where(clusters != 0, 255, 0).astype("uint8")  # make binary
+    n_comps, output, _, _ = cv2.connectedComponentsWithStats(cl_bin, connectivity=8)  # label objects
+    n_segments = n_comps - 1  # remove background
+    n_segments_pyc = n_segments
+
+    id = []
+    number = []
+    sizes = []
+    for i in range(1, n_comps):
+        m = np.where(output == i, 1, 0).astype("uint8")
+        m_p = (np.bitwise_and(m, mask_bin))
+        n_comp, out, stats, _ = cv2.connectedComponentsWithStats(m_p, connectivity=8)  # label objects
+        n_comp = n_comp - 1
+        # check if there are pycnidia in the segment
+        if n_comp == 0:
+            n_segments_pyc = n_segments_pyc - 1  # remove segment from total count
+        try:
+            type_id = np.unique(np.where(output == i, check, 0))[1]
+        except IndexError:
+            type_id = np.unique(np.where(output == i, check, 0))[0]
+        id.append(type_id)
+        number.append(n_comp)
+        _, _, stats, _ = cv2.connectedComponentsWithStats(m, connectivity=8)  # label objects
+        sizes.append(stats[1:, -1][0])
+    df = pd.DataFrame({'color_id': id, 'n_pyc': number, 'size_seg': sizes, 'leaf_area': area_leaf,
+                       'n_segments': n_segments, 'n_segments_pyc': n_segments_pyc})
+
+    df.to_csv(f'{workdir}/Output_segments/{image_name}.csv', index=False)
 
     # save resulting image
-    imageio.imwrite(f'{workdir}/Processed/Segments/{image_name}.tiff', labels_out)
+    output_mask_all = output*255.0 / output.max().astype("uint8")
+    imageio.imwrite(f'{workdir}/Output_segments/Segments/all/{image_name}.png', output_mask_all)
+
+    output_mask_pyc = labels_out*255.0 / labels_out.max().astype("uint8")
+    imageio.imwrite(f'{workdir}/Output_segments/Segments/pyc/{image_name}.png', output_mask_pyc)
 
     maskout = np.where(labels_out == 0)
     orig_image[maskout] = (0, 0, 0)
-
-    imageio.imwrite(f'{workdir}/Processed/Segments/Overlay/{image_name}.tiff', orig_image)
+    imageio.imwrite(f'{workdir}/Output_segments/Overlay/{image_name}.tiff', orig_image)
 
 
 
